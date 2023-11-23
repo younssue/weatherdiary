@@ -103,5 +103,14 @@ public class DiaryService {
     }
 
 
+    public void updateDiary(LocalDate date, String text) {
+        Diary nowDiary = diaryRepository.getFirstByDate(date);
+        nowDiary.setText(text);
 
+        diaryRepository.save(nowDiary);
+    }
+
+    public void deleteDiary(LocalDate date) {
+        diaryRepository.deleteAllByDate(date);
+    }
 }
