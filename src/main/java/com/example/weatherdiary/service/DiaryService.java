@@ -1,6 +1,8 @@
 package com.example.weatherdiary.service;
 
+import com.example.weatherdiary.domain.DateWeather;
 import com.example.weatherdiary.domain.Diary;
+import com.example.weatherdiary.repository.DateWeatherRepository;
 import com.example.weatherdiary.repository.DiaryRepository;
 import lombok.RequiredArgsConstructor;
 import org.json.simple.JSONArray;
@@ -8,7 +10,9 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -27,32 +31,82 @@ public class DiaryService {
     private String apiKey;
 
     private final DiaryRepository diaryRepository;
+    private final DateWeatherRepository dateWeatherRepository;
 
+    @Transactional
+    @Scheduled(cron = "0 0 1 * * *")
+    public void saveWeatherDate() {
+        dateWeatherRepository.save(getWheatherFromApi());
+    }
+
+    // 날씨 일기 작성
     public void createDiary(LocalDate date, String text) {
+
+        // 날씨 데이터 가져오기 (API에서 가져오기? or DB에서 가져오기?)
+        DateWeather dateWeather = getDateWeather(date);
+
+        // 파싱된 데이터 + 일기 값 우리 db에 넣기
+        Diary nowDiary = new Diary();
+
+        nowDiary.setDateWeather(dateWeather);
+        nowDiary.setText(text);
+        diaryRepository.save(nowDiary);
+    }
+
+
+    // 날씨 스케줄링에 맞게 가져오기
+    private DateWeather getWheatherFromApi() {
         // open weather map 에서 날씨 데이터 가져오기
         String weatherData = getWeatherString();
 
         // 받아온 날씨 json 파싱하기
         Map<String, Object> parseWeather = parseWeather(weatherData);
-
-        // 파싱된 데이터 + 일기 값 우리 db에 넣기
-        Diary nowDiary = new Diary();
-        nowDiary.setWeather(parseWeather.get("main").toString());
-        nowDiary.setIcon(parseWeather.get("icon").toString());
-        nowDiary.setTemperature((Double) parseWeather.get("temp"));
-        nowDiary.setText(text);
-        nowDiary.setDate(date);
-        diaryRepository.save(nowDiary);
+        DateWeather dateWeather = new DateWeather();
+        dateWeather.setDate(LocalDate.now());
+        dateWeather.setWeather(parseWeather.get("main")
+                                           .toString());
+        dateWeather.setIcon(parseWeather.get("icon")
+                                        .toString());
+        dateWeather.setTemperature((Double) parseWeather.get("temp"));
+        return dateWeather;
     }
 
+    private DateWeather getDateWeather(LocalDate date){
+        List<DateWeather> dateWeatherListFromDB = dateWeatherRepository.findAllByDate(date);
+        if(dateWeatherListFromDB.size() == 0){
+            // 새로 api에서 날씨 정보를 가져와야한다
+            // 현재 날씨 를 가져오도록 한다
+            return getWheatherFromApi();
+        }else {
+            return dateWeatherListFromDB.get(0);
+        }
+    }
+
+    // 날씨 일기 조회
+    @Transactional(readOnly = true)
     public List<Diary> readDiary(LocalDate date) {
         return diaryRepository.findAllByDate(date);
     }
 
+    // 날씨 일기 전체 조회
     public List<Diary> readDiaries(LocalDate startDate, LocalDate endDate) {
         return diaryRepository.findAllByDateBetween(startDate, endDate);
     }
 
+    // 날씨 일기 수정
+    public void updateDiary(LocalDate date, String text) {
+        Diary nowDiary = diaryRepository.getFirstByDate(date);
+        nowDiary.setText(text);
+
+        diaryRepository.save(nowDiary);
+    }
+
+    // 날씨 일기 삭제
+    public void deleteDiary(LocalDate date) {
+        diaryRepository.deleteAllByDate(date);
+    }
+
+    // 날싸 정보 불러오기
     private String getWeatherString() {
         String apiurl = "https://api.openweathermap.org/data/2.5/weather?q=seoul&appid=" + apiKey;
         try {
@@ -103,14 +157,4 @@ public class DiaryService {
     }
 
 
-    public void updateDiary(LocalDate date, String text) {
-        Diary nowDiary = diaryRepository.getFirstByDate(date);
-        nowDiary.setText(text);
-
-        diaryRepository.save(nowDiary);
-    }
-
-    public void deleteDiary(LocalDate date) {
-        diaryRepository.deleteAllByDate(date);
-    }
 }
